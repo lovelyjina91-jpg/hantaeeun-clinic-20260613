@@ -150,7 +150,7 @@
   </div>
 
   <div class="note">
-    ⌨️ <b>객관식</b>은 <span class="kbd">1</span>~<span class="kbd">5</span>로 선택하고 <span class="kbd">Enter</span>로 제출, <b>주관식</b>은 답 입력 후 <span class="kbd">Enter</span>!
+    ⌨️ <b>객관식</b>은 <span class="kbd">1</span>~<span class="kbd">5</span> 키로 선택하면 바로 채점되고 다음 문제로 넘어가요. <b>주관식</b>은 답 입력 후 <span class="kbd">Enter</span>!
   </div>
 
   <button class="btn primary" id="startBtn" disabled>이름을 입력하면 시작돼요</button>
@@ -658,11 +658,10 @@ function renderQuiz(){
     if(q.type === '객관식'){
       inner += `<div class="choices">`;
       q.choices.forEach((c,i) => {
-        inner += `<div class="choice" data-idx="${i+1}" onclick="pickChoice(${q.id}, ${i+1})">
+        inner += `<div class="choice" data-idx="${i+1}" onclick="answerChoice(${q.id}, ${i+1})">
           <span class="num">${i+1}.</span><span>${escapeHtml(c)}</span></div>`;
       });
       inner += `</div>
-      <div class="submitrow"><button class="mini disabled" id="sub${q.id}" onclick="submitChoice(${q.id})">제출</button></div>
       <div class="feedback" id="fb${q.id}"></div>
       <div class="explanation" id="ex${q.id}"></div>`;
     } else {
@@ -681,31 +680,42 @@ function escapeHtml(s){
 }
 
 // ============== ANSWER HANDLING ==============
-function pickChoice(qid, idx){
+// 객관식: 선택 즉시 채점 → 0.25초 뒤 자동으로 다음 문제로
+function answerChoice(qid, idx){
   if(state.answers[qid] !== undefined) return;
   const card = document.getElementById('q'+qid);
   card.querySelectorAll('.choice').forEach(c => c.classList.remove('selected'));
   card.querySelector(`.choice[data-idx="${idx}"]`).classList.add('selected');
-  card.querySelector('#sub'+qid).classList.remove('disabled');
-  card._pending = idx;
-}
-
-function submitChoice(qid){
-  if(state.answers[qid] !== undefined) return;
-  const card = document.getElementById('q'+qid);
-  const idx = card._pending;
-  if(!idx) return;
   const q = QUESTIONS.find(x => x.id === qid);
   const ok = (idx === q.answer);
   state.answers[qid] = idx;
   state.correct[qid] = ok;
   card.querySelectorAll('.choice').forEach(c => c.classList.add('locked'));
-  const sb = card.querySelector('#sub'+qid);
-  sb.disabled = true; sb.classList.add('disabled');
   const fb = card.querySelector('#fb'+qid);
   fb.className = 'feedback show ' + (ok ? 'ok':'ng');
-  fb.textContent = ok ? '정답! 🎉 (해설은 다 푼 뒤 공개)' : '아쉬워요 😢 (해설은 다 푼 뒤 공개)';
+  fb.textContent = ok ? '정답! 🎉 (해설은 다 푼 뒤 공개)' : '체크 완료 ✏️ (해설은 다 푼 뒤 공개)';
   afterAnswer();
+  if(Object.keys(state.answers).length < QUESTIONS.length){
+    setTimeout(() => scrollToNext(qid), 250);
+  }
+}
+
+// 다음 미답 문제로 부드럽게 이동
+function scrollToNext(qid){
+  const ids = QUESTIONS.map(q => q.id);
+  const i = ids.indexOf(qid);
+  let target = null;
+  for(let j=i+1; j<ids.length; j++){ if(state.answers[ids[j]]===undefined){ target=ids[j]; break; } }
+  if(target===null){ for(let j=0; j<i; j++){ if(state.answers[ids[j]]===undefined){ target=ids[j]; break; } } }
+  if(target===null) return;
+  const el = document.getElementById('q'+target);
+  if(!el) return;
+  el.scrollIntoView({behavior:'smooth', block:'center'});
+  const tq = QUESTIONS.find(x => x.id === target);
+  if(tq.type === '주관식'){
+    const inp = el.querySelector('input.short');
+    if(inp) setTimeout(() => inp.focus({preventScroll:true}), 400);
+  }
 }
 
 function normalize(s){
@@ -727,8 +737,11 @@ function submitText(qid){
   card.querySelector('.mini').classList.add('disabled');
   const fb = card.querySelector('#fb'+qid);
   fb.className = 'feedback show ' + (ok ? 'ok':'ng');
-  fb.textContent = ok ? '정답! 🎉 (해설은 다 푼 뒤 공개)' : '아쉬워요 😢 (해설은 다 푼 뒤 공개)';
+  fb.textContent = ok ? '정답! 🎉 (해설은 다 푼 뒤 공개)' : '제출 완료 ✏️ (해설은 다 푼 뒤 공개)';
   afterAnswer();
+  if(Object.keys(state.answers).length < QUESTIONS.length){
+    setTimeout(() => scrollToNext(qid), 250);
+  }
 }
 
 function afterAnswer(){
@@ -847,8 +860,8 @@ document.addEventListener('keydown', e => {
   if(best.type === '객관식'){
     if(/^[1-5]$/.test(e.key)){
       const n = parseInt(e.key);
-      if(n <= best.choices.length){ e.preventDefault(); pickChoice(best.id, n); }
-    } else if(e.key === 'Enter'){ e.preventDefault(); submitChoice(best.id); }
+      if(n <= best.choices.length){ e.preventDefault(); answerChoice(best.id, n); }
+    }
   } else {
     if(e.key === 'Enter' && e.target.tagName === 'INPUT'){ e.preventDefault(); submitText(best.id); }
   }
